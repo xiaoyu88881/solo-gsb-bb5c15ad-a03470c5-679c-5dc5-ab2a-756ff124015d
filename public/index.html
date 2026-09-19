@@ -12,7 +12,7 @@
       <span class="logo">🎭</span>
       <div>
         <h1>舞台走位校验系统</h1>
-        <p class="subtitle">区域连接图 · 通道封闭时段 · 到位口令时间校验</p>
+        <p class="subtitle">区域连接图 · 通道容量与封闭时段 · 到位口令时间校验 · 通道占用冲突</p>
       </div>
     </div>
     <div class="actions">
@@ -34,6 +34,7 @@
       </div>
       <p class="mode-hint" id="mode-hint"></p>
       <div id="summary" class="summary"></div>
+      <div id="conflict-overview" class="conflict-overview"></div>
       <div id="validation-results"></div>
     </section>
 
@@ -57,19 +58,20 @@
       </section>
 
       <section class="card" id="panel-edges">
-        <h2>区域连接（通行耗时 · 封闭时段）</h2>
+        <h2>区域连接（通行耗时 · 容量 · 封闭时段）</h2>
         <form id="form-edge" class="entity-form">
           <input type="hidden" id="edge-id" />
           <select id="edge-a" required></select>
           <select id="edge-b" required></select>
           <input type="number" id="edge-seconds" placeholder="耗时(秒)" min="0" step="1" required />
+          <input type="number" id="edge-capacity" placeholder="容量(1~10)" min="1" max="10" step="1" title="同一时刻允许并发占用该通道的人数（1～10），缺省 1" />
           <div class="closures-editor" id="closures-editor">
             <div class="closures-head">
               <span>🚧 通道封闭时段（秒，可添加多段）</span>
               <button type="button" class="btn btn-small" id="btn-add-closure">＋ 添加时段</button>
             </div>
             <div id="closures-list"></div>
-            <p class="closures-hint">封闭规则：开始 ≤ t &lt; 结束 内通道不可通行；校验时将在前一区域等待或自动绕行。</p>
+            <p class="closures-hint">封闭规则：开始 ≤ t &lt; 结束 内通道不可通行；校验时将在前一区域等待或自动绕行。容量为同一时刻允许并发占用的人数（1～10，缺省 1），超过即产生通道占用冲突。</p>
           </div>
           <div class="form-buttons">
             <button type="submit" class="btn btn-accent" id="edge-submit">添加连接</button>
@@ -77,7 +79,7 @@
           </div>
         </form>
         <table>
-          <thead><tr><th>区域 A</th><th>区域 B</th><th>通行耗时</th><th>封闭时段</th><th class="col-ops">操作</th></tr></thead>
+          <thead><tr><th>区域 A</th><th>区域 B</th><th>通行耗时</th><th>容量</th><th>封闭时段</th><th class="col-ops">操作</th></tr></thead>
           <tbody id="edges-tbody"></tbody>
         </table>
       </section>

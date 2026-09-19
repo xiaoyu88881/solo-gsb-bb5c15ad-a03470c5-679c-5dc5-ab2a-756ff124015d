@@ -1,4 +1,5 @@
 const { earliestArrival } = require('./graph');
+const { detectConflicts } = require('./conflicts');
 
 const MODES = ['classic', 'propagate'];
 
@@ -27,11 +28,13 @@ function validate(data, mode = 'classic') {
   const propagate = mode === 'propagate';
   const areaName = new Map(data.areas.map((a) => [a.id, a.name]));
   const actors = [];
+  const occupancies = []; // 所有演员逐边路线对无向连接的占用区间 [进入, 离开)
   let ok = 0;
   let failed = 0;
   let unreachable = 0;
 
   for (const actor of data.actors) {
+    const actorIndex = data.actors.indexOf(actor);
     const cues = data.cues
       .filter((c) => c.actorId === actor.id && areaName.has(c.areaId))
       .slice()
@@ -74,6 +77,7 @@ function validate(data, mode = 'classic') {
         lateness = Math.max(0, ea.time - to.time); // 到达下一条口令时的最终迟到
         routePath = [from.areaId, ...ea.legs.map((l) => l.toId)].map((id) => areaName.get(id) || id);
         legs = ea.legs.map((l) => ({
+          edgeId: l.edgeId,
           fromName: areaName.get(l.fromId) || l.fromId,
           toName: areaName.get(l.toId) || l.toId,
           departTime: l.depart,
@@ -81,6 +85,22 @@ function validate(data, mode = 'classic') {
           waitSeconds: l.wait,
           travelSeconds: l.arrive - l.depart,
         }));
+        // 通道占用：仅实际行进区间 [depart, arrive)；进入前的区域等待不占用通道
+        ea.legs.forEach((l) => {
+          occupancies.push({
+            edgeId: l.edgeId,
+            actorId: actor.id,
+            actorName: actor.name,
+            fromId: l.fromId,
+            toId: l.toId,
+            fromName: areaName.get(l.fromId) || l.fromId,
+            toName: areaName.get(l.toId) || l.toId,
+            enter: l.depart,
+            leave: l.arrive,
+            actorIndex,
+            segmentIndex: i + 1,
+          });
+        });
         waits = legs
           .filter((l) => l.waitSeconds > 0)
           .map((l) => ({ areaName: l.fromName, seconds: l.waitSeconds }));
@@ -131,6 +151,31 @@ function validate(data, mode = 'classic') {
     actors.push(actorResult);
   }
 
+  // 通道占用冲突：汇总全部逐边占用，按无向连接检测超载区间并合并连续时段
+  const conflicts = detectConflicts(data.edges, occupancies, (id) => areaName.get(id));
+
+  // 将冲突关联到相关区段（按演员 + 区段号匹配占用）
+  const segByKey = new Map();
+  actors.forEach((ar) => {
+    ar.segments.forEach((seg) => segByKey.set(`${ar.actorId}#${seg.index}`, seg));
+  });
+  for (const conflict of conflicts) {
+    for (const occ of conflict.occupancies) {
+      const seg = segByKey.get(`${occ.actorId}#${occ.segmentIndex}`);
+      if (!seg) continue;
+      if (!seg.conflicts) seg.conflicts = [];
+      const brief = {
+        conflictId: conflict.id,
+        edgeName: conflict.edgeName,
+        startTime: conflict.startTime,
+        endTime: conflict.endTime,
+        peak: conflict.peak,
+        capacity: conflict.capacity,
+      };
+      if (!seg.conflicts.some((x) => x.conflictId === brief.conflictId)) seg.conflicts.push(brief);
+    }
+  }
+
   return {
     mode: propagate ? 'propagate' : 'classic',
     generatedAt: new Date().toISOString(),
@@ -140,8 +185,10 @@ function validate(data, mode = 'classic') {
       ok,
       failed,
       unreachable,
+      conflicts: conflicts.length,
     },
     actors,
+    conflicts,
   };
 }
 

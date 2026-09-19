@@ -131,6 +131,66 @@ main { max-width: 1280px; margin: 0 auto; padding: 20px 24px 60px; }
 .badge.ok .num { color: var(--ok); }
 .badge.fail .num { color: var(--fail); }
 .badge.warn .num { color: var(--warn); }
+.badge.conflict { border-color: var(--fail); }
+.badge.conflict .num { color: var(--fail); }
+
+/* 通道占用冲突总览 */
+.conflict-overview { margin-bottom: 16px; }
+.conflict-intro { margin: 0 0 10px; font-size: 13.5px; color: var(--muted); }
+.conflict-intro strong { color: var(--fail); }
+.conflict-card {
+  border: 1px solid var(--fail);
+  border-radius: 10px;
+  background: var(--fail-bg);
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+.conflict-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13.5px;
+  margin-bottom: 6px;
+}
+.conflict-no {
+  font-weight: 700;
+  color: var(--fail);
+  background: rgba(229, 83, 75, 0.18);
+  border-radius: 6px;
+  padding: 1px 8px;
+}
+.conflict-edge { font-weight: 600; }
+.conflict-time { color: var(--muted); }
+.conflict-peak {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--fail);
+  white-space: nowrap;
+}
+.conflict-occs {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.conflict-occs li { margin: 2px 0; }
+
+/* 区段行内的冲突标记 */
+tr.has-conflict td { box-shadow: inset 3px 0 0 var(--fail); }
+.conflict-tags { display: block; margin-top: 4px; }
+.conflict-tag {
+  display: inline-block;
+  margin: 2px 4px 0 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--fail-bg);
+  border: 1px solid rgba(229, 83, 75, 0.45);
+  color: #ff8d86;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
 
 /* 演员校验块 */
 .actor-block { margin-bottom: 18px; }

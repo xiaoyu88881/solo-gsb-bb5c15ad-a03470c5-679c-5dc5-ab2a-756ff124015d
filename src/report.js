@@ -35,6 +35,7 @@ function renderClassicTable(lines, actor) {
     let verdict = STATUS_TEXT[seg.status];
     if (seg.status === 'ok') verdict += `（余 ${seg.slackSeconds} 秒）`;
     if (seg.status === 'fail') verdict += `（缺 ${-seg.slackSeconds} 秒）`;
+    verdict += segmentConflictBadge(seg);
     const route = seg.path.length > 0 ? seg.path.join(' → ') : '—';
     lines.push(`| ${seg.index} | ${from} | ${to} | ${available} | ${required} | ${arrival} | ${verdict} | ${route} |`);
   }
@@ -56,6 +57,7 @@ function renderPropagateTable(lines, actor) {
     let verdict = STATUS_TEXT[seg.status];
     if (seg.status === 'ok') verdict += `（余 ${seg.slackSeconds} 秒）`;
     if (seg.status === 'fail') verdict += `（缺 ${-seg.slackSeconds} 秒）`;
+    verdict += segmentConflictBadge(seg);
     const route = seg.path.length > 0 ? seg.path.join(' → ') : '—';
     lines.push(`| ${seg.index} | ${from} | ${to} | ${planned} | ${depart} | ${arrival} | ${inherited} | ${late} | ${verdict} | ${route} |`);
   }
@@ -92,6 +94,53 @@ function renderPropagationDetails(lines, actor) {
   lines.push('');
 }
 
+/** 通道占用冲突：汇总表 + 每条冲突的明细（连接、时刻、峰值、参与占用） */
+function renderConflictSummary(lines, result) {
+  const conflicts = result.conflicts || [];
+  lines.push('## 通道占用冲突汇总');
+  lines.push('');
+  if (conflicts.length === 0) {
+    lines.push('所有连接各时刻并发占用人数均未超过容量，无通道占用冲突。');
+    lines.push('');
+    return;
+  }
+  lines.push(`共发现 **${conflicts.length}** 段连续超载区间（占用按 [进入, 离开) 计，首尾相接不重叠，等待不占用通道）：`);
+  lines.push('');
+  lines.push('| # | 通道（无向连接） | 容量 | 起 | 止 | 持续 | 峰值人数 | 涉及演员 |');
+  lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
+  conflicts.forEach((c, idx) => {
+    const actors = [...new Set(c.occupancies.map((o) => o.actorName))].join('、');
+    lines.push(
+      `| ${idx + 1} | ${c.edgeName} | ${c.capacity} | ${fmtTime(c.startTime)} | ${fmtTime(c.endTime)} | ${c.durationSeconds} 秒 | ${c.peak} | ${actors} |`
+    );
+  });
+  lines.push('');
+  lines.push('### 冲突明细');
+  lines.push('');
+  conflicts.forEach((c, idx) => {
+    lines.push(
+      `**冲突 ${idx + 1}：${c.edgeName}**　${fmtTime(c.startTime)} ~ ${fmtTime(c.endTime)}` +
+        `（持续 ${c.durationSeconds} 秒，容量 ${c.capacity}，峰值 ${c.peak} 人）`
+    );
+    lines.push('');
+    lines.push('| 演员 | 方向 | 进入 | 离开 | 关联区段 |');
+    lines.push('| --- | --- | --- | --- | --- |');
+    for (const o of c.occupancies) {
+      lines.push(
+        `| ${o.actorName} | ${o.direction} | ${fmtTime(o.enter)} | ${fmtTime(o.leave)} | 区段 ${o.segmentIndex} |`
+      );
+    }
+    lines.push('');
+  });
+}
+
+/** 区段关联冲突的简短标记（纯文本，附加在结论后） */
+function segmentConflictBadge(seg) {
+  if (!seg.conflicts || seg.conflicts.length === 0) return '';
+  const peak = Math.max(...seg.conflicts.map((c) => c.peak));
+  return ` 🚶通道冲突×${seg.conflicts.length}（峰值${peak}人）`;
+}
+
 /** 将校验结果渲染为 Markdown 报告 */
 function toMarkdown(result) {
   const propagate = result.mode === 'propagate';
@@ -112,7 +161,10 @@ function toMarkdown(result) {
   lines.push(`| ✅ 按时可达 | ${s.ok} |`);
   lines.push(`| ❌ 无法按时抵达 | ${s.failed} |`);
   lines.push(`| ⛔ 区域不可达 | ${s.unreachable} |`);
+  lines.push(`| 🚶 通道占用冲突 | ${s.conflicts || 0} |`);
   lines.push('');
+
+  renderConflictSummary(lines, result);
 
   for (const actor of result.actors) {
     lines.push(`## ${actor.actorName}`);
@@ -146,6 +198,14 @@ function toMarkdown(result) {
           lines.push(`- 区段 ${seg.index}：起点即终点（${seg.from.areaName}），无需移动`);
         } else {
           lines.push(`- 区段 ${seg.index}：${renderLegChain(seg)}；最早到达 ${fmtTime(seg.arrivalTime)}`);
+        }
+        if (seg.conflicts && seg.conflicts.length > 0) {
+          for (const c of seg.conflicts) {
+            lines.push(
+              `  - 🚶 关联通道冲突（${c.edgeName}）：${fmtTime(c.startTime)} ~ ${fmtTime(c.endTime)}，` +
+                `容量 ${c.capacity}，峰值 ${c.peak} 人`
+            );
+          }
         }
       }
       lines.push('');

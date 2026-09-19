@@ -129,10 +129,12 @@ function renderEdges() {
       const closuresText = closures.length
         ? closures.map((c) => `${c.start}~${c.end} 秒`).join('、')
         : '<span class="empty-hint">无</span>';
+      const capacity = Number.isInteger(e.capacity) && e.capacity >= 1 ? e.capacity : 1;
       return `<tr>
         <td>${escapeHtml(areaName(e.a))}</td>
         <td>${escapeHtml(areaName(e.b))}</td>
         <td>${e.seconds} 秒</td>
+        <td>${capacity} 人</td>
         <td class="closures-cell">${closuresText}</td>
         <td class="col-ops">
           <button class="btn btn-small" data-edit-edge="${e.id}">编辑</button>
@@ -140,7 +142,7 @@ function renderEdges() {
         </td>
       </tr>`;
     })
-    .join('') || '<tr><td colspan="5" class="empty-hint">暂无连接</td></tr>';
+    .join('') || '<tr><td colspan="6" class="empty-hint">暂无连接</td></tr>';
 }
 
 function renderActors() {
@@ -190,13 +192,45 @@ function renderSummary(s) {
     <div class="badge ok"><span class="num">${s.ok}</span><span class="label">按时可达</span></div>
     <div class="badge fail"><span class="num">${s.failed}</span><span class="label">无法按时抵达</span></div>
     <div class="badge warn"><span class="num">${s.unreachable}</span><span class="label">区域不可达</span></div>
+    <div class="badge conflict"><span class="num">${s.conflicts || 0}</span><span class="label">通道占用冲突</span></div>
   `;
+}
+
+/** 通道占用冲突总览（全局，跨演员） */
+function renderConflicts(conflicts) {
+  const el = $('conflict-overview');
+  if (!conflicts || conflicts.length === 0) {
+    el.innerHTML = '<p class="empty-hint">✅ 所有连接各时刻并发占用均未超过容量，无通道占用冲突（首尾相接不算重叠，等待不占用通道）。</p>';
+    return;
+  }
+  const rows = conflicts
+    .map((c, idx) => {
+      const occs = c.occupancies
+        .map(
+          (o) =>
+            `<li><strong>${escapeHtml(o.actorName)}</strong> ${escapeHtml(o.direction)}：` +
+            `${fmtTime(o.enter)} 进入 ~ ${fmtTime(o.leave)} 离开（${escapeHtml(o.actorName)} 区段 ${o.segmentIndex}）</li>`
+        )
+        .join('');
+      return `<div class="conflict-card">
+        <div class="conflict-head">
+          <span class="conflict-no">冲突 ${idx + 1}</span>
+          <span class="conflict-edge">🚶 ${escapeHtml(c.edgeName)}</span>
+          <span class="conflict-time">${fmtTime(c.startTime)} ~ ${fmtTime(c.endTime)}（${c.durationSeconds} 秒）</span>
+          <span class="conflict-peak">容量 ${c.capacity} / 峰值 ${c.peak} 人</span>
+        </div>
+        <ul class="conflict-occs">${occs}</ul>
+      </div>`;
+    })
+    .join('');
+  el.innerHTML = `<p class="conflict-intro">共发现 <strong>${conflicts.length}</strong> 段连续超载区间（已合并首尾相接的连续超载）：</p>${rows}`;
 }
 
 function renderValidation() {
   const v = state.validation;
   if (!v) return;
   renderSummary(v.summary);
+  renderConflicts(v.conflicts);
 
   const container = $('validation-results');
   if (v.actors.length === 0) {
@@ -229,6 +263,19 @@ function renderValidation() {
     .join('');
 }
 
+/** 区段关联的通道冲突标签（两种模式共用） */
+function renderConflictTags(seg) {
+  if (!seg.conflicts || seg.conflicts.length === 0) return '';
+  const tags = seg.conflicts
+    .map(
+      (c) =>
+        `<span class="conflict-tag" title="容量 ${c.capacity} 人，峰值 ${c.peak} 人">🚶 ${escapeHtml(c.edgeName)} ` +
+        `${fmtTime(c.startTime)}~${fmtTime(c.endTime)}（峰值 ${c.peak}/${c.capacity} 人）</span>`
+    )
+    .join('');
+  return `<span class="conflict-tags">${tags}</span>`;
+}
+
 /** 区段独立校验模式的结果行 */
 function renderClassicRow(seg) {
   let timeCell;
@@ -244,12 +291,12 @@ function renderClassicRow(seg) {
                 <span class="time-detail">余量 ${seg.slackSeconds} 秒</span>
                 <span class="time-detail">最早到达 ${fmtTime(seg.arrivalTime)}</span>`;
   }
-  return `<tr class="seg-${seg.status}">
+  return `<tr class="seg-${seg.status}${seg.conflicts && seg.conflicts.length ? ' has-conflict' : ''}">
     <td>${seg.index}</td>
     <td>${escapeHtml(seg.from.areaName)}<span class="time-detail">${fmtTime(seg.from.time)}${seg.from.note ? ' · ' + escapeHtml(seg.from.note) : ''}</span></td>
     <td>${escapeHtml(seg.to.areaName)}<span class="time-detail">${fmtTime(seg.to.time)}${seg.to.note ? ' · ' + escapeHtml(seg.to.note) : ''}</span></td>
     <td>${timeCell}</td>
-    <td class="route">${renderRouteCell(seg)}</td>
+    <td class="route">${renderRouteCell(seg)}${renderConflictTags(seg)}</td>
     <td><span class="status-pill ${seg.status}">${STATUS_LABEL[seg.status]}</span></td>
   </tr>`;
 }
@@ -279,7 +326,7 @@ function renderPropagateRow(seg) {
       : seg.lateness > 0
         ? `<span class="late-tag">迟到 ${seg.lateness} 秒</span>`
         : '<span class="ontime-tag">准时</span>';
-  return `<tr class="seg-${seg.status}">
+  return `<tr class="seg-${seg.status}${seg.conflicts && seg.conflicts.length ? ' has-conflict' : ''}">
     <td>${seg.index}</td>
     <td>${escapeHtml(seg.from.areaName)}<span class="time-detail">${fmtTime(seg.from.time)}${fromDwell}${seg.from.note ? ' · ' + escapeHtml(seg.from.note) : ''}</span></td>
     <td>${escapeHtml(seg.to.areaName)}<span class="time-detail">${fmtTime(seg.to.time)}${toDwell}${seg.to.note ? ' · ' + escapeHtml(seg.to.note) : ''}</span></td>
@@ -287,7 +334,7 @@ function renderPropagateRow(seg) {
     <td>${arrivalCell}</td>
     <td>${inheritedCell}</td>
     <td>${lateCell}</td>
-    <td class="route">${renderRouteCell(seg)}</td>
+    <td class="route">${renderRouteCell(seg)}${renderConflictTags(seg)}</td>
     <td><span class="status-pill ${seg.status}">${STATUS_LABEL[seg.status]}</span></td>
   </tr>`;
 }
@@ -424,10 +471,17 @@ function bindForms() {
       toast(error, true);
       return;
     }
+    const capacityRaw = $('edge-capacity').value.trim();
+    const capacity = capacityRaw === '' ? 1 : Number(capacityRaw);
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 10) {
+      toast('通道容量必须是 1～10 的整数', true);
+      return;
+    }
     const body = {
       a: $('edge-a').value,
       b: $('edge-b').value,
       seconds: Number($('edge-seconds').value),
+      capacity,
       closures,
     };
     mutate(async () => {
@@ -501,6 +555,7 @@ function bindTableActions() {
       $('edge-a').value = ed.a;
       $('edge-b').value = ed.b;
       $('edge-seconds').value = ed.seconds;
+      $('edge-capacity').value = Number.isInteger(ed.capacity) && ed.capacity >= 1 ? ed.capacity : 1;
       clearClosureRows();
       (Array.isArray(ed.closures) ? ed.closures : []).forEach((c) => addClosureRow(c.start, c.end));
       setEditing('edge-id', 'edge-submit', 'edge-cancel', true, '添加连接', '保存修改');

@@ -20,7 +20,7 @@
     { "id": "edge-wingl-backstage", "a": "area-wing-l", "b": "area-backstage", "seconds": 10, "closures": [] },
     { "id": "edge-wingr-up", "a": "area-wing-r", "b": "area-upstage", "seconds": 6, "closures": [] },
     { "id": "edge-wingl-up", "a": "area-wing-l", "b": "area-upstage", "seconds": 6, "closures": [] },
-    { "id": "edge-up-balcony", "a": "area-upstage", "b": "area-balcony", "seconds": 12, "closures": [] },
+    { "id": "edge-up-balcony", "a": "area-upstage", "b": "area-balcony", "seconds": 12, "closures": [], "capacity": 2 },
     { "id": "edge-down-pit", "a": "area-downstage", "b": "area-pit", "seconds": 6, "closures": [] }
   ],
   "actors": [
@@ -35,7 +35,7 @@
     { "id": "cue-z4", "actorId": "actor-zhang", "areaId": "area-pit", "time": 40, "dwell": 0, "note": "跃入乐池（时间过紧示例）" },
     { "id": "cue-z5", "actorId": "actor-zhang", "areaId": "area-wing-l", "time": 90, "dwell": 0, "note": "侧台左退场" },
     { "id": "cue-l1", "actorId": "actor-li", "areaId": "area-wing-r", "time": 10, "dwell": 0, "note": "侧台右候场" },
-    { "id": "cue-l2", "actorId": "actor-li", "areaId": "area-center", "time": 25, "dwell": 10, "note": "舞台中央独唱（演唱停留 10 秒）" },
+    { "id": "cue-l2", "actorId": "actor-li", "areaId": "area-center", "time": 20, "dwell": 10, "note": "舞台中央独唱（演唱停留 10 秒）" },
     { "id": "cue-l3", "actorId": "actor-li", "areaId": "area-backstage", "time": 60, "dwell": 0, "note": "回后台换装" },
     { "id": "cue-l4", "actorId": "actor-li", "areaId": "area-balcony", "time": 75, "dwell": 0, "note": "二层平台重逢（时间过紧示例）" },
     { "id": "cue-l5", "actorId": "actor-li", "areaId": "area-downstage", "time": 120, "dwell": 0, "note": "台前谢幕" },
