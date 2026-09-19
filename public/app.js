@@ -133,6 +133,7 @@ function renderEdges() {
         <td>${escapeHtml(areaName(e.a))}</td>
         <td>${escapeHtml(areaName(e.b))}</td>
         <td>${e.seconds} 秒</td>
+        <td>${e.capacity || 1} 人</td>
         <td class="closures-cell">${closuresText}</td>
         <td class="col-ops">
           <button class="btn btn-small" data-edit-edge="${e.id}">编辑</button>
@@ -140,7 +141,7 @@ function renderEdges() {
         </td>
       </tr>`;
     })
-    .join('') || '<tr><td colspan="5" class="empty-hint">暂无连接</td></tr>';
+    .join('') || '<tr><td colspan="6" class="empty-hint">暂无连接</td></tr>';
 }
 
 function renderActors() {
@@ -190,13 +191,43 @@ function renderSummary(s) {
     <div class="badge ok"><span class="num">${s.ok}</span><span class="label">按时可达</span></div>
     <div class="badge fail"><span class="num">${s.failed}</span><span class="label">无法按时抵达</span></div>
     <div class="badge warn"><span class="num">${s.unreachable}</span><span class="label">区域不可达</span></div>
+    <div class="badge conflict"><span class="num">${s.conflicts ?? 0}</span><span class="label">通道占用冲突</span></div>
   `;
+}
+
+/** 通道占用冲突面板：列出全部冲突事件、峰值人数与涉及演员（方向 / 占用区间） */
+function renderConflictsPanel(v) {
+  const el = $('conflicts-panel');
+  const conflicts = Array.isArray(v.conflicts) ? v.conflicts : [];
+  if (conflicts.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+  const items = conflicts
+    .map((c) => {
+      const occupants = c.occupants
+        .map(
+          (o) =>
+            `${escapeHtml(o.actorName)}（区段 ${o.segmentIndex}，${escapeHtml(o.fromName)} → ${escapeHtml(o.toName)}，` +
+            `${fmtTime(o.enter)}~${fmtTime(o.leave)}）`
+        )
+        .join('；');
+      return `<div class="conflict-item">
+        <span class="conflict-tag">⚠ 冲突 C${c.id}</span>
+        <strong>${escapeHtml(c.edgeName)}</strong>
+        <span class="time-detail">${fmtTime(c.start)} ~ ${fmtTime(c.end)} · 峰值 ${c.peak} 人 / 容量 ${c.capacity}</span>
+        <span class="conflict-occupants">${occupants}</span>
+      </div>`;
+    })
+    .join('');
+  el.innerHTML = `<div class="conflicts-box"><h3>⚠ 通道占用冲突（${conflicts.length} 起）</h3>${items}</div>`;
 }
 
 function renderValidation() {
   const v = state.validation;
   if (!v) return;
   renderSummary(v.summary);
+  renderConflictsPanel(v);
 
   const container = $('validation-results');
   if (v.actors.length === 0) {
@@ -292,7 +323,7 @@ function renderPropagateRow(seg) {
   </tr>`;
 }
 
-/** 路线单元格：路径链 + 逐边时刻与等待标注（两种模式共用） */
+/** 路线单元格：路径链 + 逐边时刻与等待标注 + 关联通道冲突标记（两种模式共用） */
 function renderRouteCell(seg) {
   const route = seg.path.length > 0 ? escapeHtml(seg.path.join(' → ')) : '—';
   let legDetail = '';
@@ -306,7 +337,21 @@ function renderRouteCell(seg) {
     });
     legDetail = `<span class="leg-detail">${parts.join('<br>')}</span>`;
   }
-  return route + legDetail;
+  let conflictDetail = '';
+  if (seg.conflicts && seg.conflicts.length > 0) {
+    const byId = new Map(((state.validation && state.validation.conflicts) || []).map((c) => [c.id, c]));
+    const tags = seg.conflicts
+      .map((id) => {
+        const c = byId.get(id);
+        const tip = c
+          ? `通道「${c.edgeName}」${fmtTime(c.start)}~${fmtTime(c.end)}，峰值 ${c.peak} 人 / 容量 ${c.capacity}`
+          : '';
+        return `<span class="conflict-tag" title="${escapeHtml(tip)}">⚠ 冲突 C${id}</span>`;
+      })
+      .join(' ');
+    conflictDetail = `<span class="leg-detail">${tags}</span>`;
+  }
+  return route + legDetail + conflictDetail;
 }
 
 /* ---------- 下拉框选项 ---------- */
@@ -424,10 +469,17 @@ function bindForms() {
       toast(error, true);
       return;
     }
+    const capacityRaw = $('edge-capacity').value.trim();
+    const capacity = capacityRaw === '' ? 1 : Number(capacityRaw);
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 10) {
+      toast('通道容量必须是 1～10 的整数', true);
+      return;
+    }
     const body = {
       a: $('edge-a').value,
       b: $('edge-b').value,
       seconds: Number($('edge-seconds').value),
+      capacity,
       closures,
     };
     mutate(async () => {
@@ -501,6 +553,7 @@ function bindTableActions() {
       $('edge-a').value = ed.a;
       $('edge-b').value = ed.b;
       $('edge-seconds').value = ed.seconds;
+      $('edge-capacity').value = ed.capacity || 1;
       clearClosureRows();
       (Array.isArray(ed.closures) ? ed.closures : []).forEach((c) => addClosureRow(c.start, c.end));
       setEditing('edge-id', 'edge-submit', 'edge-cancel', true, '添加连接', '保存修改');

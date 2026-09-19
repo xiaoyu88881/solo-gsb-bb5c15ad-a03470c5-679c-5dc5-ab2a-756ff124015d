@@ -60,6 +60,9 @@ const validators = {
     if (!ids.has(body.a) || !ids.has(body.b)) return '连接两端必须是已存在的区域';
     if (body.a === body.b) return '连接两端不能是同一区域';
     if (!isNonNegativeInt(body.seconds)) return '通行耗时必须是不小于 0 的整数秒';
+    if (body.capacity !== undefined && (!Number.isInteger(body.capacity) || body.capacity < 1 || body.capacity > 10)) {
+      return '通道容量必须是 1～10 的整数';
+    }
     return validateClosures(body.closures);
   },
   cues(body, data) {
@@ -80,8 +83,12 @@ function sanitize(collection, body) {
       return { name: body.name.trim(), description: (body.description || '').trim() };
     case 'actors':
       return { name: body.name.trim(), role: (body.role || '').trim() };
-    case 'edges':
-      return { a: body.a, b: body.b, seconds: body.seconds, closures: normalizeClosures(body.closures) };
+    case 'edges': {
+      const edge = { a: body.a, b: body.b, seconds: body.seconds, closures: normalizeClosures(body.closures) };
+      // capacity 缺省时不写入：POST 由路由补默认值 1，PUT 保留原值（兼容旧数据）
+      if (body.capacity !== undefined) edge.capacity = body.capacity;
+      return edge;
+    }
     case 'cues': {
       const cue = { actorId: body.actorId, areaId: body.areaId, time: body.time, note: (body.note || '').trim() };
       // dwell 缺省时不写入：POST 由路由补默认值 0，PUT 保留原值（兼容旧数据）
@@ -134,6 +141,7 @@ router.post('/:collection', (req, res) => {
 
   const item = { id: crypto.randomUUID(), ...sanitize(collection, req.body) };
   if (collection === 'cues' && item.dwell === undefined) item.dwell = 0; // 停留时长默认 0
+  if (collection === 'edges' && item.capacity === undefined) item.capacity = 1; // 通道容量默认 1
 
   if (collection === 'edges') {
     const dup = data.edges.some(

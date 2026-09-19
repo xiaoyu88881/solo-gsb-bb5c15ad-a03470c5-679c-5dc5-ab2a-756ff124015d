@@ -16,7 +16,7 @@
     { "id": "edge-center-up", "a": "area-center", "b": "area-upstage", "seconds": 3, "closures": [ { "start": 8, "end": 10 }, { "start": 14, "end": 16 } ] },
     { "id": "edge-center-down", "a": "area-center", "b": "area-downstage", "seconds": 3, "closures": [] },
     { "id": "edge-up-backstage", "a": "area-upstage", "b": "area-backstage", "seconds": 8, "closures": [] },
-    { "id": "edge-wingr-backstage", "a": "area-wing-r", "b": "area-backstage", "seconds": 10, "closures": [] },
+    { "id": "edge-wingr-backstage", "a": "area-wing-r", "b": "area-backstage", "seconds": 10, "capacity": 2, "closures": [] },
     { "id": "edge-wingl-backstage", "a": "area-wing-l", "b": "area-backstage", "seconds": 10, "closures": [] },
     { "id": "edge-wingr-up", "a": "area-wing-r", "b": "area-upstage", "seconds": 6, "closures": [] },
     { "id": "edge-wingl-up", "a": "area-wing-l", "b": "area-upstage", "seconds": 6, "closures": [] },
@@ -26,7 +26,8 @@
   "actors": [
     { "id": "actor-zhang", "name": "张三", "role": "饰 王子" },
     { "id": "actor-li", "name": "李四", "role": "饰 公主" },
-    { "id": "actor-wang", "name": "王五", "role": "饰 旁白" }
+    { "id": "actor-wang", "name": "王五", "role": "饰 旁白" },
+    { "id": "actor-zhao", "name": "赵六", "role": "饰 侍卫" }
   ],
   "cues": [
     { "id": "cue-z1", "actorId": "actor-zhang", "areaId": "area-backstage", "time": 0, "dwell": 0, "note": "开场候场" },
@@ -40,6 +41,8 @@
     { "id": "cue-l4", "actorId": "actor-li", "areaId": "area-balcony", "time": 75, "dwell": 0, "note": "二层平台重逢（时间过紧示例）" },
     { "id": "cue-l5", "actorId": "actor-li", "areaId": "area-downstage", "time": 120, "dwell": 0, "note": "台前谢幕" },
     { "id": "cue-w1", "actorId": "actor-wang", "areaId": "area-downstage", "time": 0, "dwell": 0, "note": "开场旁白" },
-    { "id": "cue-w2", "actorId": "actor-wang", "areaId": "area-roof", "time": 30, "dwell": 0, "note": "天台布景（不可达示例）" }
+    { "id": "cue-w2", "actorId": "actor-wang", "areaId": "area-roof", "time": 30, "dwell": 0, "note": "天台布景（不可达示例）" },
+    { "id": "cue-zh1", "actorId": "actor-zhao", "areaId": "area-upstage", "time": 3, "dwell": 0, "note": "舞台后区就位" },
+    { "id": "cue-zh2", "actorId": "actor-zhao", "areaId": "area-backstage", "time": 20, "dwell": 0, "note": "回后台（与张三共用通道，占用冲突示例）" }
   ]
 }

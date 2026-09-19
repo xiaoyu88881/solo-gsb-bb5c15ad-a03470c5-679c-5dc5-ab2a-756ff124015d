@@ -8,6 +8,103 @@ function dwellOf(cue) {
   return Number.isInteger(d) && d > 0 ? d : 0;
 }
 
+/** 通道容量（同时占用的最大人数）：旧数据无该字段，按 1 处理 */
+function capacityOf(edge) {
+  const c = edge.capacity;
+  return Number.isInteger(c) && c >= 1 && c <= 10 ? c : 1;
+}
+
+/**
+ * 通道占用冲突检测：
+ * 汇总所有演员对同一无向连接的占用区间 [进入, 离开)（等待发生在区域内，不占用通道），
+ * 任一时刻并发人数（按演员去重，同一名演员不会与自己构成冲突）超过连接容量时
+ * 生成冲突事件；首尾恰好相接不算重叠，连续超载的区间合并为同一事件。
+ *
+ * @param {object} data 全量数据（区域 / 连接）
+ * @param {Array} occupancies 占用记录：[{ edgeId, actorId, actorName, segmentIndex, fromName, toName, enter, leave }]
+ * @returns {Array} 冲突事件：[{ id, edgeId, edgeName, capacity, start, end, peak, occupants }]
+ */
+function detectConflicts(data, occupancies) {
+  const edgeById = new Map(data.edges.map((e) => [e.id, e]));
+  const areaName = new Map(data.areas.map((a) => [a.id, a.name]));
+  const byEdge = new Map();
+  for (const o of occupancies) {
+    if (!byEdge.has(o.edgeId)) byEdge.set(o.edgeId, []);
+    byEdge.get(o.edgeId).push(o);
+  }
+
+  const conflicts = [];
+  for (const [edgeId, list] of byEdge) {
+    const edge = edgeById.get(edgeId);
+    if (!edge) continue;
+    const capacity = capacityOf(edge);
+    // 扫描线事件：同一时刻先处理离开、再处理进入（半开区间，首尾相接不重叠）
+    const events = [];
+    for (const o of list) {
+      events.push({ t: o.enter, d: 1, actorId: o.actorId });
+      events.push({ t: o.leave, d: -1, actorId: o.actorId });
+    }
+    events.sort((x, y) => x.t - y.t || x.d - y.d);
+
+    const active = new Map(); // actorId -> 进行中的占用次数（同一演员多段重叠仅计一人）
+    let open = null; // 当前未闭合的超载区间 { start, peak }
+    let lastT = null;
+    for (let i = 0; i < events.length; ) {
+      const t = events[i].t;
+      while (i < events.length && events[i].t === t) {
+        const ev = events[i];
+        if (ev.d === 1) {
+          active.set(ev.actorId, (active.get(ev.actorId) || 0) + 1);
+        } else {
+          const n = (active.get(ev.actorId) || 0) - 1;
+          if (n > 0) active.set(ev.actorId, n);
+          else active.delete(ev.actorId);
+        }
+        i++;
+      }
+      lastT = t;
+      const concurrent = active.size;
+      if (concurrent > capacity) {
+        if (!open) open = { start: t, peak: concurrent };
+        else if (concurrent > open.peak) open.peak = concurrent;
+      } else if (open) {
+        conflicts.push({ edgeId, capacity, start: open.start, end: t, peak: open.peak });
+        open = null;
+      }
+    }
+    if (open) conflicts.push({ edgeId, capacity, start: open.start, end: lastT, peak: open.peak });
+  }
+
+  // 补充冲突涉及演员（占用区间与冲突时段重叠者）与连接名称，按开始时刻排序编号
+  const result = conflicts
+    .map((c) => {
+      const edge = edgeById.get(c.edgeId);
+      const occupants = byEdge
+        .get(c.edgeId)
+        .filter((o) => o.enter < c.end && o.leave > c.start)
+        .sort((x, y) => x.enter - y.enter || x.actorName.localeCompare(y.actorName, 'zh'))
+        .map((o) => ({
+          actorId: o.actorId,
+          actorName: o.actorName,
+          segmentIndex: o.segmentIndex,
+          fromName: o.fromName,
+          toName: o.toName,
+          enter: o.enter,
+          leave: o.leave,
+        }));
+      return {
+        ...c,
+        edgeName: `${areaName.get(edge.a) || edge.a} ↔ ${areaName.get(edge.b) || edge.b}`,
+        occupants,
+      };
+    })
+    .sort((x, y) => x.start - y.start || x.end - y.end || x.edgeName.localeCompare(y.edgeName, 'zh'));
+  result.forEach((c, i) => {
+    c.id = i + 1;
+  });
+  return result;
+}
+
 /**
  * 走位校验：
  * 对每位演员，将其到位口令按时间升序排列，逐段推演至下一口令区域，
@@ -74,6 +171,9 @@ function validate(data, mode = 'classic') {
         lateness = Math.max(0, ea.time - to.time); // 到达下一条口令时的最终迟到
         routePath = [from.areaId, ...ea.legs.map((l) => l.toId)].map((id) => areaName.get(id) || id);
         legs = ea.legs.map((l) => ({
+          edgeId: l.edgeId,
+          fromId: l.fromId,
+          toId: l.toId,
           fromName: areaName.get(l.fromId) || l.fromId,
           toName: areaName.get(l.toId) || l.toId,
           departTime: l.depart,
@@ -106,6 +206,7 @@ function validate(data, mode = 'classic') {
         legs,
         waits,
         status,
+        conflicts: [], // 关联的通道占用冲突编号，校验全部区段后统一回填
       };
       if (propagate) {
         segment.from.dwell = dwell;
@@ -131,6 +232,38 @@ function validate(data, mode = 'classic') {
     actors.push(actorResult);
   }
 
+  // 通道占用冲突：汇总全部演员对同一无向连接的占用区间 [进入, 离开)
+  // （进入时刻为等待结束后的实际进入时刻，等待时间不占用通道；零耗时连接不占时间，直接忽略）
+  const occupancies = [];
+  for (const ar of actors) {
+    for (const seg of ar.segments) {
+      for (const leg of seg.legs) {
+        if (leg.arriveTime > leg.departTime) {
+          occupancies.push({
+            edgeId: leg.edgeId,
+            actorId: ar.actorId,
+            actorName: ar.actorName,
+            segmentIndex: seg.index,
+            fromName: leg.fromName,
+            toName: leg.toName,
+            enter: leg.departTime,
+            leave: leg.arriveTime,
+            segment: seg, // 仅用于回填区段关联，不随结果序列化
+          });
+        }
+      }
+    }
+  }
+  const conflicts = detectConflicts(data, occupancies);
+  // 结果区按区段标记关联冲突
+  for (const c of conflicts) {
+    for (const o of occupancies) {
+      if (o.edgeId === c.edgeId && o.enter < c.end && o.leave > c.start) {
+        o.segment.conflicts.push(c.id);
+      }
+    }
+  }
+
   return {
     mode: propagate ? 'propagate' : 'classic',
     generatedAt: new Date().toISOString(),
@@ -140,9 +273,11 @@ function validate(data, mode = 'classic') {
       ok,
       failed,
       unreachable,
+      conflicts: conflicts.length,
     },
+    conflicts,
     actors,
   };
 }
 
-module.exports = { validate, MODES };
+module.exports = { validate, MODES, capacityOf, detectConflicts };

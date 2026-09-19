@@ -92,6 +92,29 @@ function renderPropagationDetails(lines, actor) {
   lines.push('');
 }
 
+/** 通道占用冲突明细：冲突时段、峰值人数与涉及演员（方向 / 占用区间） */
+function renderConflictSection(lines, result) {
+  const conflicts = result.conflicts || [];
+  lines.push('## 通道占用冲突');
+  lines.push('');
+  if (conflicts.length === 0) {
+    lines.push('未检测到通道占用冲突。（容量缺省为 1；占用区间按 [进入, 离开) 半开统计，首尾相接不算重叠，等待时间不占用通道）');
+    lines.push('');
+    return;
+  }
+  lines.push(`共检测出 ${conflicts.length} 起通道占用冲突（占用区间按 [进入, 离开) 半开统计，首尾相接不算重叠，等待时间不占用通道）：`);
+  lines.push('');
+  lines.push('| 编号 | 连接 | 容量 | 冲突时段 | 峰值人数 | 涉及演员（区段 / 方向 / 占用区间） |');
+  lines.push('| --- | --- | --- | --- | --- | --- |');
+  for (const c of conflicts) {
+    const occupants = c.occupants
+      .map((o) => `${o.actorName}（区段 ${o.segmentIndex}，${o.fromName}→${o.toName}，${fmtTime(o.enter)}~${fmtTime(o.leave)}）`)
+      .join('；');
+    lines.push(`| C${c.id} | ${c.edgeName} | ${c.capacity} | ${fmtTime(c.start)} ~ ${fmtTime(c.end)} | ${c.peak} | ${occupants} |`);
+  }
+  lines.push('');
+}
+
 /** 将校验结果渲染为 Markdown 报告 */
 function toMarkdown(result) {
   const propagate = result.mode === 'propagate';
@@ -112,7 +135,10 @@ function toMarkdown(result) {
   lines.push(`| ✅ 按时可达 | ${s.ok} |`);
   lines.push(`| ❌ 无法按时抵达 | ${s.failed} |`);
   lines.push(`| ⛔ 区域不可达 | ${s.unreachable} |`);
+  lines.push(`| ⚠ 通道占用冲突 | ${s.conflicts ?? 0} |`);
   lines.push('');
+
+  renderConflictSection(lines, result);
 
   for (const actor of result.actors) {
     lines.push(`## ${actor.actorName}`);
@@ -145,7 +171,11 @@ function toMarkdown(result) {
         } else if (!seg.legs || seg.legs.length === 0) {
           lines.push(`- 区段 ${seg.index}：起点即终点（${seg.from.areaName}），无需移动`);
         } else {
-          lines.push(`- 区段 ${seg.index}：${renderLegChain(seg)}；最早到达 ${fmtTime(seg.arrivalTime)}`);
+          const conflictNote =
+            seg.conflicts && seg.conflicts.length > 0
+              ? `；⚠ 涉及通道冲突 ${seg.conflicts.map((id) => `C${id}`).join('、')}`
+              : '';
+          lines.push(`- 区段 ${seg.index}：${renderLegChain(seg)}；最早到达 ${fmtTime(seg.arrivalTime)}${conflictNote}`);
         }
       }
       lines.push('');
